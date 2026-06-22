@@ -1,13 +1,13 @@
 <%- include('partials/header', { pageTitle: '관리자' }) %>
 <section class="hero-row">
-  <div><div class="eyebrow">ADMIN DASHBOARD</div><h1>영상 시청 평가 관리</h1><p class="muted">제출, 평가 진행, 순위, 계정과 시청기록을 한 화면에서 관리합니다.</p></div>
+  <div><div class="eyebrow">ADMIN DASHBOARD</div><h1>영상 시청 평가 관리</h1><p class="muted">제출, 평가 진행, 종합 순위, 계정과 누적 시청기록을 관리합니다.</p></div>
   <a class="button button--primary" href="/admin/export.csv">CSV 내려받기</a>
 </section>
 <div class="stat-grid">
   <div class="stat-card"><span>활성 학생</span><strong><%= counts.student_count %></strong></div>
   <div class="stat-card"><span>제출 작품</span><strong><%= counts.video_count %></strong></div>
   <div class="stat-card"><span>시청 세션</span><strong><%= counts.session_count %></strong></div>
-  <div class="stat-card"><span>고유 시청초</span><strong><%= Number(counts.watched_second_count).toLocaleString() %></strong></div>
+  <div class="stat-card"><span>누적 시청시간</span><strong><%= formatSeconds(counts.cumulative_watch_seconds) %></strong></div>
 </div>
 <section class="panel" id="settings">
   <div class="section-heading"><div><div class="eyebrow">CONTROL</div><h2>운영 설정</h2></div></div>
@@ -16,27 +16,29 @@
     <label class="field"><span>제출 상태</span><select name="submissionOpen"><option value="1" <%= settings.submission_open === '1' ? 'selected' : '' %>>제출 가능</option><option value="0" <%= settings.submission_open !== '1' ? 'selected' : '' %>>제출 마감</option></select></label>
     <label class="field"><span>평가 상태</span><select name="evaluationOpen"><option value="0" <%= settings.evaluation_open !== '1' ? 'selected' : '' %>>평가 대기</option><option value="1" <%= settings.evaluation_open === '1' ? 'selected' : '' %>>평가 진행</option></select></label>
     <label class="field"><span>최소 유효 시청시간</span><input name="minValidSeconds" type="number" min="1" max="120" value="<%= settings.min_valid_seconds %>"></label>
-    <label class="field"><span>최종 순위 기준</span><select name="rankingMode"><option value="watch_time" <%= settings.ranking_mode !== 'watch_rate' ? 'selected' : '' %>>전체 평가자 평균 시청시간</option><option value="watch_rate" <%= settings.ranking_mode === 'watch_rate' ? 'selected' : '' %>>전체 평가자 평균 시청률</option></select></label>
     <label class="field"><span>제작자 표시</span><select name="anonymousMode"><option value="1" <%= settings.anonymous_mode === '1' ? 'selected' : '' %>>익명</option><option value="0" <%= settings.anonymous_mode !== '1' ? 'selected' : '' %>>이름 표시</option></select></label>
     <div class="field field--action"><button class="button button--primary" type="submit">설정 저장</button></div>
   </form>
-  <div class="note"><strong>자동 처리</strong><span>평가를 시작하면 제출은 자동으로 마감됩니다. 평가자는 자기 작품을 볼 수 없습니다.</span></div>
+  <div class="note"><strong>최종 점수</strong><span>평균 시청시간 33.3% + 평균 시청지속비율 33.3% + 클릭률 33.3%. 각 지표는 해당 반에서 가장 높은 작품을 100점으로 환산합니다.</span></div>
+  <div class="note"><strong>누적 방식</strong><span>되감아 다시 본 구간과 영상을 다시 처음부터 본 시간도 계속 더해집니다. 따라서 평균 시청지속비율은 100%를 넘을 수 있습니다.</span></div>
 </section>
 <section class="panel" id="ranking">
-  <div class="section-heading"><div><div class="eyebrow">RANKING</div><h2>최종 순위</h2></div><span class="muted"><%= settings.ranking_mode === 'watch_rate' ? '평균 시청률 기준' : '전체 평균 시청시간 기준' %></span></div>
+  <div class="section-heading"><div><div class="eyebrow">COMPOSITE RANKING</div><h2>최종 종합 순위</h2></div><span class="muted">세 지표 동일 가중치</span></div>
   <% if (!ranking.length) { %><div class="empty-state"><p>제출된 작품이 없습니다.</p></div><% } else { %>
   <div class="table-wrap"><table>
-    <thead><tr><th>순위</th><th>작품</th><th>제작자</th><th>전체 평균</th><th>클릭자 평균</th><th>평균 시청률</th><th>유효 시청자</th><th>클릭률</th><th>완주율</th></tr></thead>
+    <thead><tr><th>순위</th><th>작품</th><th>제작자</th><th>종합점수</th><th>평균 시청시간</th><th>시청시간 점수</th><th>평균 지속비율</th><th>지속비율 점수</th><th>클릭률</th><th>클릭률 점수</th><th>클릭 인원</th></tr></thead>
     <tbody><% ranking.forEach((row) => { %><tr class="<%= row.rank <= 3 ? 'top-rank' : '' %>">
       <td><span class="rank-badge"><%= row.rank %></span></td>
       <td><a class="table-title" href="/admin/video/<%= row.id %>"><%= row.title %></a></td>
       <td><%= row.owner_name %></td>
-      <td><strong><%= formatSeconds(row.average_all_seconds) %></strong></td>
-      <td><%= formatSeconds(row.average_clicker_seconds) %></td>
-      <td><%= row.average_watch_rate.toFixed(1) %>%</td>
-      <td><%= row.valid_viewers %>/<%= row.eligible_count %></td>
+      <td><strong><%= row.final_score.toFixed(2) %></strong></td>
+      <td><%= formatSeconds(row.average_watch_seconds) %></td>
+      <td><%= row.watch_time_score.toFixed(1) %></td>
+      <td><%= row.average_retention_rate.toFixed(1) %>%</td>
+      <td><%= row.retention_score.toFixed(1) %></td>
       <td><%= row.click_rate.toFixed(1) %>%</td>
-      <td><%= row.completion_rate.toFixed(1) %>%</td>
+      <td><%= row.click_score.toFixed(1) %></td>
+      <td><%= row.clicked_viewers %>/<%= row.eligible_count %></td>
     </tr><% }) %></tbody>
   </table></div><% } %>
 </section>

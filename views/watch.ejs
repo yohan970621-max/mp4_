@@ -7,7 +7,7 @@
   </div>
   <div class="player-shell"><div id="youtubePlayer"></div></div>
   <div id="playerError" class="alert alert--error hidden"></div>
-  <div class="watch-note panel"><strong>기록 기준</strong><span>사이트 안에서 1배속으로 실제 재생된 고유 구간만 저장됩니다. 일시정지, 다른 탭, 광고, 건너뛴 구간은 제외됩니다.</span></div>
+  <div class="watch-note panel"><strong>기록 기준</strong><span>사이트 안에서 1배속으로 실제 재생된 시간이 누적됩니다. 되감아 다시 본 구간과 영상을 다시 본 시간도 추가됩니다. 일시정지, 다른 탭, 광고, 건너뛴 구간은 제외됩니다.</span></div>
 </section>
 <script>
 (() => {
@@ -101,7 +101,8 @@
         playbackRate: rate, visible: true, playing: playerState === 1
       });
       if (result.accepted) {
-        saveState.textContent = `저장됨 · ${Math.floor(result.watchedSeconds / 60)}:${String(result.watchedSeconds % 60).padStart(2, '0')}`;
+        const totalSeconds = Math.floor(result.watchedSeconds);
+        saveState.textContent = `누적 저장 · ${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, '0')}`;
         saveState.classList.remove('save-state--error');
       }
     } catch (error) {

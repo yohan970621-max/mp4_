@@ -12,6 +12,7 @@ const { extractYouTubeId, fetchYouTubeMetadata } = require('./lib/youtube');
 const { pinLookup, validatePin, findUserByPin, requireLogin, requireRole, requireEvaluator } = require('./lib/auth');
 const { formatSeconds, shuffle, parseStudentLines, hashIp, escapeCsv } = require('./lib/helpers');
 const { getRanking, getViewerMatrix, getVideoViewerRows, getViewerVideoRows } = require('./lib/stats');
+const { calculateAcceptedSeconds } = require('./lib/watch');
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -124,7 +125,7 @@ const loginLimiter = rateLimit({
 app.get('/health', async (req, res, next) => {
   try {
     await query('SELECT 1');
-    res.json({ ok: true, version: '2.0.0' });
+    res.json({ ok: true, version: '2.1.0' });
   } catch (error) { next(error); }
 });
 
@@ -168,7 +169,7 @@ app.post('/setup', async (req, res, next) => {
       await setSetting('submission_open', '1', client);
       await setSetting('evaluation_open', '0', client);
       await setSetting('min_valid_seconds', '10', client);
-      await setSetting('ranking_mode', 'watch_time', client);
+      await setSetting('ranking_mode', 'composite', client);
       await setSetting('anonymous_mode', '1', client);
     });
     res.redirect('/login?setup=1');
@@ -260,14 +261,14 @@ app.get('/videos', requireEvaluator, async (req, res, next) => {
     const result = await query(`
       SELECT v.id, v.owner_id, v.title, v.youtube_id, v.thumbnail_url, v.duration_seconds,
         u.name AS owner_name, d.position,
-        COALESCE(w.watched_seconds, 0)::int AS watched_seconds,
+        COALESCE(w.watched_seconds, 0) AS watched_seconds,
         COALESCE(c.click_count, 0)::int AS click_count
       FROM display_orders d
       JOIN videos v ON v.id = d.video_id AND v.active = TRUE
       JOIN users u ON u.id = v.owner_id
       LEFT JOIN (
-        SELECT video_id, COUNT(*)::int AS watched_seconds
-        FROM watched_seconds WHERE viewer_id = $1 GROUP BY video_id
+        SELECT video_id, cumulative_seconds AS watched_seconds
+        FROM watch_totals WHERE viewer_id = $1
       ) w ON w.video_id = v.id
       LEFT JOIN (
         SELECT video_id, COUNT(*)::int AS click_count
@@ -323,6 +324,7 @@ app.post('/api/watch/heartbeat', requireEvaluator, async (req, res, next) => {
   try {
     const settings = await getSettings();
     if (settings.evaluation_open !== '1') return res.status(403).json({ error: '평가가 종료되었습니다.' });
+
     const sessionId = Number(req.body.sessionId);
     const videoId = Number(req.body.videoId);
     const from = Number(req.body.from);
@@ -331,47 +333,67 @@ app.post('/api/watch/heartbeat', requireEvaluator, async (req, res, next) => {
     const playbackRate = Number(req.body.playbackRate);
     const visible = req.body.visible === true;
     const playing = req.body.playing === true;
-    if (![sessionId, videoId, from, to, playbackRate].every(Number.isFinite)) return res.status(400).json({ error: '잘못된 기록입니다.' });
-    const delta = to - from;
-    if (!visible || !playing || Math.abs(playbackRate - 1) > 0.05 || from < 0 || delta <= 0.15 || delta > 7.5) {
-      return res.json({ accepted: false });
+
+    if (![sessionId, videoId, from, to, playbackRate].every(Number.isFinite)) {
+      return res.status(400).json({ error: '잘못된 기록입니다.' });
     }
+
+    const acceptedSeconds = calculateAcceptedSeconds({ from, to, playbackRate, visible, playing });
+    if (acceptedSeconds <= 0) return res.json({ accepted: false });
+
     const sessionResult = await query(`
-      SELECT s.id, s.viewer_id, s.video_id, v.owner_id
-      FROM watch_sessions s JOIN videos v ON v.id = s.video_id
+      SELECT s.id, s.viewer_id, s.video_id, s.last_activity_at, v.owner_id
+      FROM watch_sessions s
+      JOIN videos v ON v.id = s.video_id
       WHERE s.id = $1 AND s.viewer_id = $2 AND s.video_id = $3
     `, [sessionId, req.session.user.id, videoId]);
-    if (!sessionResult.rowCount) return res.status(403).json({ error: '유효하지 않은 시청 세션입니다.' });
-    if (Number(sessionResult.rows[0].owner_id) === req.session.user.id) return res.status(403).json({ error: '본인 작품은 평가할 수 없습니다.' });
 
-    const maxPosition = duration > 0 ? Math.ceil(duration) : Math.ceil(to + 1);
-    const startSecond = Math.max(0, Math.floor(from));
-    const endSecond = Math.min(maxPosition, Math.ceil(to));
-    const seconds = [];
-    for (let second = startSecond; second < endSecond; second += 1) {
-      const overlap = Math.min(to, second + 1) - Math.max(from, second);
-      if (overlap >= 0.5) seconds.push(second);
+    if (!sessionResult.rowCount) return res.status(403).json({ error: '유효하지 않은 시청 세션입니다.' });
+    if (Number(sessionResult.rows[0].owner_id) === req.session.user.id) {
+      return res.status(403).json({ error: '본인 작품은 평가할 수 없습니다.' });
     }
-    if (!seconds.length || seconds.length > 9) return res.json({ accepted: false });
+
+    // 같은 구간을 다시 보거나 영상을 처음부터 재시청해도 인정 시간을 다시 누적합니다.
 
     await withTransaction(async (client) => {
-      const values = [];
-      const placeholders = seconds.map((second, index) => {
-        const base = index * 3;
-        values.push(req.session.user.id, videoId, second);
-        return `($${base + 1}, $${base + 2}, $${base + 3})`;
-      }).join(',');
-      await client.query(
-        `INSERT INTO watched_seconds(viewer_id, video_id, second_position) VALUES ${placeholders} ON CONFLICT DO NOTHING`,
-        values
-      );
-      await client.query('UPDATE watch_sessions SET last_activity_at = NOW(), last_position = $1 WHERE id = $2', [to, sessionId]);
+      await client.query(`
+        INSERT INTO watch_totals(viewer_id, video_id, cumulative_seconds, updated_at)
+        VALUES ($1, $2, $3, NOW())
+        ON CONFLICT (viewer_id, video_id)
+        DO UPDATE SET
+          cumulative_seconds = watch_totals.cumulative_seconds + EXCLUDED.cumulative_seconds,
+          updated_at = NOW()
+      `, [req.session.user.id, videoId, acceptedSeconds]);
+
+      await client.query(`
+        UPDATE watch_sessions
+        SET last_activity_at = NOW(),
+            last_position = $1,
+            accumulated_seconds = accumulated_seconds + $2
+        WHERE id = $3
+      `, [to, acceptedSeconds, sessionId]);
+
       if (duration > 0 && duration < 86400) {
-        await client.query(`UPDATE videos SET duration_seconds = $1, updated_at = NOW() WHERE id = $2 AND (duration_seconds = 0 OR duration_seconds < $1 - 1 OR duration_seconds > $1 + 1)`, [Math.round(duration), videoId]);
+        await client.query(`
+          UPDATE videos
+          SET duration_seconds = $1, updated_at = NOW()
+          WHERE id = $2
+            AND (duration_seconds = 0 OR duration_seconds < $1 - 1 OR duration_seconds > $1 + 1)
+        `, [Math.round(duration), videoId]);
       }
     });
-    const countResult = await query('SELECT COUNT(*)::int AS count FROM watched_seconds WHERE viewer_id = $1 AND video_id = $2', [req.session.user.id, videoId]);
-    res.json({ accepted: true, watchedSeconds: Number(countResult.rows[0].count) });
+
+    const totalResult = await query(`
+      SELECT cumulative_seconds
+      FROM watch_totals
+      WHERE viewer_id = $1 AND video_id = $2
+    `, [req.session.user.id, videoId]);
+
+    res.json({
+      accepted: true,
+      acceptedSeconds,
+      watchedSeconds: Math.max(0, Number(totalResult.rows[0]?.cumulative_seconds) || 0)
+    });
   } catch (error) { next(error); }
 });
 
@@ -404,7 +426,7 @@ app.get('/admin', requireRole('admin'), async (req, res, next) => {
         (SELECT COUNT(*) FROM users WHERE active = TRUE AND role = 'student')::int AS student_count,
         (SELECT COUNT(*) FROM videos WHERE active = TRUE)::int AS video_count,
         (SELECT COUNT(*) FROM watch_sessions)::int AS session_count,
-        (SELECT COUNT(*) FROM watched_seconds)::int AS watched_second_count
+        COALESCE((SELECT SUM(cumulative_seconds) FROM watch_totals), 0) AS cumulative_watch_seconds
     `)).rows[0];
     res.render('admin', { ranking, users, videos, counts, settings });
   } catch (error) { next(error); }
@@ -417,14 +439,13 @@ app.post('/admin/settings', requireRole('admin'), async (req, res, next) => {
     const evaluationOpen = req.body.evaluationOpen === '1' ? '1' : '0';
     const submissionOpen = evaluationOpen === '1' ? '0' : (req.body.submissionOpen === '1' ? '1' : '0');
     const minValid = Math.min(120, Math.max(1, Number(req.body.minValidSeconds || 10)));
-    const rankingMode = req.body.rankingMode === 'watch_rate' ? 'watch_rate' : 'watch_time';
     const anonymousMode = req.body.anonymousMode === '1' ? '1' : '0';
     await withTransaction(async (client) => {
       await setSetting('event_title', eventTitle, client);
       await setSetting('evaluation_open', evaluationOpen, client);
       await setSetting('submission_open', submissionOpen, client);
       await setSetting('min_valid_seconds', String(minValid), client);
-      await setSetting('ranking_mode', rankingMode, client);
+      await setSetting('ranking_mode', 'composite', client);
       await setSetting('anonymous_mode', anonymousMode, client);
     });
     flash(req, 'success', '운영 설정을 저장했습니다.');
@@ -496,7 +517,7 @@ app.post('/admin/watch/reset', requireRole('admin'), async (req, res, next) => {
   try {
     if (String(req.body.confirm || '') !== 'RESET') throw new Error('확인란에 RESET을 입력해야 합니다.');
     await withTransaction(async (client) => {
-      await client.query('TRUNCATE watch_events, watched_seconds, watch_sessions, display_orders RESTART IDENTITY');
+      await client.query('TRUNCATE watch_events, watched_seconds, watch_totals, watch_sessions, display_orders RESTART IDENTITY');
     });
     flash(req, 'success', '모든 시청기록과 무작위 노출 순서를 초기화했습니다. 작품과 계정은 유지됩니다.');
     res.redirect('/admin');
@@ -530,10 +551,17 @@ app.get('/admin/export.csv', requireRole('admin'), async (req, res, next) => {
     const ranking = await getRanking(settings);
     const matrix = await getViewerMatrix();
     const lines = [];
-    lines.push(['순위','작품','제작자','영상길이','평가가능인원','유효시청자','전체평균시청시간(초)','클릭자평균시청시간(초)','평균시청률(%)','클릭률(%)','완주율(%)'].map(escapeCsv).join(','));
+    lines.push([
+      '순위','작품','제작자','영상길이','평가가능인원','클릭한평가자','누적시청시간(초)',
+      '평균시청시간(초)','평균시청지속비율(%)','클릭률(%)',
+      '평균시청시간점수','시청지속비율점수','클릭률점수','최종종합점수'
+    ].map(escapeCsv).join(','));
     ranking.forEach((row) => lines.push([
-      row.rank, row.title, row.owner_name, row.duration_seconds, row.eligible_count, row.valid_viewers,
-      row.average_all_seconds.toFixed(2), row.average_clicker_seconds.toFixed(2), row.average_watch_rate.toFixed(2), row.click_rate.toFixed(2), row.completion_rate.toFixed(2)
+      row.rank, row.title, row.owner_name, row.duration_seconds, row.eligible_count, row.clicked_viewers,
+      row.total_watch_seconds.toFixed(2), row.average_watch_seconds.toFixed(2),
+      row.average_retention_rate.toFixed(2), row.click_rate.toFixed(2),
+      row.watch_time_score.toFixed(2), row.retention_score.toFixed(2),
+      row.click_score.toFixed(2), row.final_score.toFixed(2)
     ].map(escapeCsv).join(',')));
     lines.push('');
     lines.push(['시청자', '역할', ...matrix.videos.map((video) => video.title)].map(escapeCsv).join(','));
@@ -566,7 +594,7 @@ app.use((error, req, res, next) => {
 async function start() {
   await migrate();
   const server = app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Video Evaluation Web v2.0.0: http://localhost:${PORT}`);
+    console.log(`Video Evaluation Web v2.1.0: http://localhost:${PORT}`);
   });
   const shutdown = async () => {
     server.close(async () => {

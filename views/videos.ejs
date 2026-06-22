@@ -19,7 +19,7 @@
   <div class="panel empty-state"><h2>시청할 작품이 없습니다.</h2><p>제출된 작품이 있는지 관리자에게 확인하세요.</p></div>
 <% } else { %>
   <div class="video-grid">
-  <% videos.forEach((video, index) => { const progress = video.duration_seconds > 0 ? Math.min(100, video.watched_seconds / video.duration_seconds * 100) : 0; %>
+  <% videos.forEach((video, index) => { const cumulativeRate = video.duration_seconds > 0 ? Number(video.watched_seconds) / video.duration_seconds * 100 : 0; const progress = Math.min(100, cumulativeRate); %>
     <a class="video-card" href="/watch/<%= video.id %>">
       <div class="video-card__thumb">
         <img src="<%= video.thumbnail_url || ('https://i.ytimg.com/vi/' + video.youtube_id + '/hqdefault.jpg') %>" alt="">
@@ -29,7 +29,7 @@
         <div class="work-label">WORK <%= String(index + 1).padStart(2, '0') %></div>
         <h2><%= video.title %></h2>
         <% if (settings.anonymous_mode !== '1') { %><p class="muted"><%= video.owner_name %></p><% } %>
-        <div class="progress-row"><div class="progress"><span style="width:<%= progress.toFixed(1) %>%"></span></div><span><%= formatSeconds(video.watched_seconds) %> 시청</span></div>
+        <div class="progress-row"><div class="progress"><span style="width:<%= progress.toFixed(1) %>%"></span></div><span><%= formatSeconds(video.watched_seconds) %> 누적 · <%= cumulativeRate.toFixed(1) %>%</span></div>
       </div>
     </a>
   <% }) %>

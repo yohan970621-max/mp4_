@@ -1,6 +1,6 @@
 <%- include('partials/header', { pageTitle: viewer.name + ' 시청기록' }) %>
-<section class="detail-heading"><a class="back-link" href="/admin#accounts">← 관리자</a><div><div class="eyebrow">VIEWER REPORT</div><h1><%= viewer.name %> 시청기록</h1><p class="muted">고유 시청구간 기준으로 오래 본 작품 순서입니다.</p></div></section>
-<div class="table-wrap panel"><table><thead><tr><th>순서</th><th>작품</th><th>제작자</th><th>고유 시청시간</th><th>영상 길이</th><th>시청률</th><th>클릭 횟수</th></tr></thead><tbody>
-<% rows.forEach((row, index) => { const rate = row.duration_seconds > 0 ? Math.min(100, row.watched_seconds / row.duration_seconds * 100) : 0; %><tr><td><%= index + 1 %></td><td><a class="table-title" href="/admin/video/<%= row.id %>"><%= row.title %></a></td><td><%= row.owner_name %></td><td><strong><%= formatSeconds(row.watched_seconds) %></strong></td><td><%= row.duration_seconds ? formatSeconds(row.duration_seconds) : '미확인' %></td><td><%= rate.toFixed(1) %>%</td><td><%= row.click_count %>회</td></tr><% }) %>
+<section class="detail-heading"><a class="back-link" href="/admin#accounts">← 관리자</a><div><div class="eyebrow">VIEWER REPORT</div><h1><%= viewer.name %> 시청기록</h1><p class="muted">반복 재생과 재시청을 포함한 누적 시청시간 순서입니다.</p></div></section>
+<div class="table-wrap panel"><table><thead><tr><th>순서</th><th>작품</th><th>제작자</th><th>누적 시청시간</th><th>영상 길이</th><th>누적 지속비율</th><th>클릭 횟수</th></tr></thead><tbody>
+<% rows.forEach((row, index) => { const rate = row.duration_seconds > 0 ? Number(row.watched_seconds) / row.duration_seconds * 100 : 0; %><tr><td><%= index + 1 %></td><td><a class="table-title" href="/admin/video/<%= row.id %>"><%= row.title %></a></td><td><%= row.owner_name %></td><td><strong><%= formatSeconds(row.watched_seconds) %></strong></td><td><%= row.duration_seconds ? formatSeconds(row.duration_seconds) : '미확인' %></td><td><%= rate.toFixed(1) %>%</td><td><%= row.click_count %>회</td></tr><% }) %>
 </tbody></table></div>
 <%- include('partials/footer') %>

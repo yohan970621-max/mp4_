@@ -1,8 +1,8 @@
 {
   "name": "video-evaluation-web",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
-  "description": "YouTube 일부공개 링크 기반 영상 시청시간 평가 시스템",
+  "description": "YouTube 일부공개 링크 기반 누적 시청시간·지속비율·클릭률 종합 평가 시스템",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
