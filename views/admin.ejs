@@ -1,0 +1,67 @@
+<%- include('partials/header', { pageTitle: '관리자' }) %>
+<section class="hero-row">
+  <div><div class="eyebrow">ADMIN DASHBOARD</div><h1>영상 시청 평가 관리</h1><p class="muted">제출, 평가 진행, 순위, 계정과 시청기록을 한 화면에서 관리합니다.</p></div>
+  <a class="button button--primary" href="/admin/export.csv">CSV 내려받기</a>
+</section>
+<div class="stat-grid">
+  <div class="stat-card"><span>활성 학생</span><strong><%= counts.student_count %></strong></div>
+  <div class="stat-card"><span>제출 작품</span><strong><%= counts.video_count %></strong></div>
+  <div class="stat-card"><span>시청 세션</span><strong><%= counts.session_count %></strong></div>
+  <div class="stat-card"><span>고유 시청초</span><strong><%= Number(counts.watched_second_count).toLocaleString() %></strong></div>
+</div>
+<section class="panel" id="settings">
+  <div class="section-heading"><div><div class="eyebrow">CONTROL</div><h2>운영 설정</h2></div></div>
+  <form method="post" action="/admin/settings" class="form-grid">
+    <label class="field field--full"><span>행사명</span><input name="eventTitle" value="<%= settings.event_title %>" required></label>
+    <label class="field"><span>제출 상태</span><select name="submissionOpen"><option value="1" <%= settings.submission_open === '1' ? 'selected' : '' %>>제출 가능</option><option value="0" <%= settings.submission_open !== '1' ? 'selected' : '' %>>제출 마감</option></select></label>
+    <label class="field"><span>평가 상태</span><select name="evaluationOpen"><option value="0" <%= settings.evaluation_open !== '1' ? 'selected' : '' %>>평가 대기</option><option value="1" <%= settings.evaluation_open === '1' ? 'selected' : '' %>>평가 진행</option></select></label>
+    <label class="field"><span>최소 유효 시청시간</span><input name="minValidSeconds" type="number" min="1" max="120" value="<%= settings.min_valid_seconds %>"></label>
+    <label class="field"><span>최종 순위 기준</span><select name="rankingMode"><option value="watch_time" <%= settings.ranking_mode !== 'watch_rate' ? 'selected' : '' %>>전체 평가자 평균 시청시간</option><option value="watch_rate" <%= settings.ranking_mode === 'watch_rate' ? 'selected' : '' %>>전체 평가자 평균 시청률</option></select></label>
+    <label class="field"><span>제작자 표시</span><select name="anonymousMode"><option value="1" <%= settings.anonymous_mode === '1' ? 'selected' : '' %>>익명</option><option value="0" <%= settings.anonymous_mode !== '1' ? 'selected' : '' %>>이름 표시</option></select></label>
+    <div class="field field--action"><button class="button button--primary" type="submit">설정 저장</button></div>
+  </form>
+  <div class="note"><strong>자동 처리</strong><span>평가를 시작하면 제출은 자동으로 마감됩니다. 평가자는 자기 작품을 볼 수 없습니다.</span></div>
+</section>
+<section class="panel" id="ranking">
+  <div class="section-heading"><div><div class="eyebrow">RANKING</div><h2>최종 순위</h2></div><span class="muted"><%= settings.ranking_mode === 'watch_rate' ? '평균 시청률 기준' : '전체 평균 시청시간 기준' %></span></div>
+  <% if (!ranking.length) { %><div class="empty-state"><p>제출된 작품이 없습니다.</p></div><% } else { %>
+  <div class="table-wrap"><table>
+    <thead><tr><th>순위</th><th>작품</th><th>제작자</th><th>전체 평균</th><th>클릭자 평균</th><th>평균 시청률</th><th>유효 시청자</th><th>클릭률</th><th>완주율</th></tr></thead>
+    <tbody><% ranking.forEach((row) => { %><tr class="<%= row.rank <= 3 ? 'top-rank' : '' %>">
+      <td><span class="rank-badge"><%= row.rank %></span></td>
+      <td><a class="table-title" href="/admin/video/<%= row.id %>"><%= row.title %></a></td>
+      <td><%= row.owner_name %></td>
+      <td><strong><%= formatSeconds(row.average_all_seconds) %></strong></td>
+      <td><%= formatSeconds(row.average_clicker_seconds) %></td>
+      <td><%= row.average_watch_rate.toFixed(1) %>%</td>
+      <td><%= row.valid_viewers %>/<%= row.eligible_count %></td>
+      <td><%= row.click_rate.toFixed(1) %>%</td>
+      <td><%= row.completion_rate.toFixed(1) %>%</td>
+    </tr><% }) %></tbody>
+  </table></div><% } %>
+</section>
+<section class="panel" id="submissions">
+  <div class="section-heading"><div><div class="eyebrow">SUBMISSIONS</div><h2>작품 제출 현황</h2></div></div>
+  <div class="table-wrap"><table><thead><tr><th>제작자</th><th>작품</th><th>YouTube ID</th><th>길이</th><th>상태</th><th></th></tr></thead><tbody>
+  <% videos.forEach((video) => { %><tr><td><%= video.owner_name %></td><td><a class="table-title" href="/admin/video/<%= video.id %>"><%= video.title %></a></td><td><code><%= video.youtube_id %></code></td><td><%= video.duration_seconds ? formatSeconds(video.duration_seconds) : '미확인' %></td><td><%= video.active ? '활성' : '비활성' %></td><td><form method="post" action="/admin/videos/<%= video.id %>/delete" onsubmit="return confirm('작품과 모든 시청기록을 삭제할까요?')"><button class="button button--danger button--small" type="submit">삭제</button></form></td></tr><% }) %>
+  <% if (!videos.length) { %><tr><td colspan="6" class="muted">아직 제출된 작품이 없습니다.</td></tr><% } %>
+  </tbody></table></div>
+</section>
+<section class="panel" id="accounts">
+  <div class="section-heading"><div><div class="eyebrow">ACCOUNTS</div><h2>계정 관리</h2></div></div>
+  <details class="details-box"><summary>학생 명단 일괄 교체</summary><form method="post" action="/admin/users/bulk" class="stack"><label class="field"><span>이름,PIN 형식</span><textarea name="students" rows="10" placeholder="김민수,1001&#10;박지영,1002" required></textarea></label><p class="muted">작품과 시청기록이 하나도 없을 때만 사용할 수 있습니다.</p><button class="button button--primary" type="submit">학생 명단 교체</button></form></details>
+  <div class="account-grid">
+  <% users.forEach((account) => { %><form class="account-card" method="post" action="/admin/users/<%= account.id %>">
+    <div class="account-card__head"><span class="role-tag"><%= account.role %></span><span class="status-dot <%= account.active ? 'is-active' : '' %>"></span></div>
+    <label class="field"><span>이름</span><input name="name" value="<%= account.name %>" required></label>
+    <label class="field"><span>새 PIN · 변경할 때만</span><input name="newPin" inputmode="numeric" pattern="[0-9]{4,12}" placeholder="변경 없음"></label>
+    <label class="toggle"><input type="checkbox" name="active" value="1" <%= account.active ? 'checked' : '' %>><span>활성 계정</span></label>
+    <div class="account-actions"><button class="button button--ghost button--small" type="submit">저장</button><% if (account.role !== 'admin') { %><a class="button button--ghost button--small" href="/admin/viewer/<%= account.id %>">시청기록</a><% } %></div>
+  </form><% }) %>
+  </div>
+</section>
+<section class="panel danger-zone">
+  <div class="section-heading"><div><div class="eyebrow">DANGER ZONE</div><h2>시청기록 초기화</h2></div></div>
+  <form method="post" action="/admin/watch/reset" class="inline-form" onsubmit="return confirm('모든 시청기록을 영구 삭제할까요?')"><input name="confirm" placeholder="RESET 입력" required><button class="button button--danger" type="submit">시청기록 전체 삭제</button></form>
+</section>
+<%- include('partials/footer') %>

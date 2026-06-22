@@ -1,0 +1,120 @@
+<%- include('partials/header', { pageTitle: video.title }) %>
+<section class="watch-layout">
+  <div class="watch-heading">
+    <a class="back-link" href="/videos">← 작품 목록</a>
+    <div><div class="eyebrow">WATCH SESSION</div><h1><%= video.title %></h1></div>
+    <div id="saveState" class="save-state">플레이어 연결 중</div>
+  </div>
+  <div class="player-shell"><div id="youtubePlayer"></div></div>
+  <div id="playerError" class="alert alert--error hidden"></div>
+  <div class="watch-note panel"><strong>기록 기준</strong><span>사이트 안에서 1배속으로 실제 재생된 고유 구간만 저장됩니다. 일시정지, 다른 탭, 광고, 건너뛴 구간은 제외됩니다.</span></div>
+</section>
+<script>
+(() => {
+  const videoId = <%- JSON.stringify(Number(video.id)) %>;
+  const youtubeId = <%- JSON.stringify(video.youtube_id) %>;
+  const saveState = document.getElementById('saveState');
+  const errorBox = document.getElementById('playerError');
+  let player = null;
+  let sessionId = null;
+  let lastPosition = 0;
+  let playerState = -1;
+  let sessionStarting = false;
+
+  async function postJson(url, body, keepalive = false) {
+    const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), keepalive });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || '저장 오류');
+    return data;
+  }
+  async function ensureSession() {
+    if (sessionId || sessionStarting) return sessionId;
+    sessionStarting = true;
+    try {
+      const result = await postJson('/api/watch/start', { videoId });
+      sessionId = result.sessionId;
+      saveState.textContent = '시청기록 저장 중';
+      saveState.classList.add('save-state--active');
+      return sessionId;
+    } finally { sessionStarting = false; }
+  }
+  async function sendEvent(eventType, keepalive = false) {
+    if (!sessionId || !player) return;
+    try { await postJson('/api/watch/event', { sessionId, videoId, eventType, position: player.getCurrentTime() || 0 }, keepalive); } catch (_) {}
+  }
+
+  window.onYouTubeIframeAPIReady = () => {
+    player = new YT.Player('youtubePlayer', {
+      host: 'https://www.youtube-nocookie.com',
+      videoId: youtubeId,
+      width: '100%', height: '100%',
+      playerVars: { playsinline: 1, rel: 0, origin: window.location.origin },
+      events: {
+        onReady: (event) => {
+          event.target.setPlaybackRate(1);
+          lastPosition = event.target.getCurrentTime() || 0;
+          saveState.textContent = '재생 준비 완료';
+        },
+        onStateChange: async (event) => {
+          playerState = event.data;
+          if (event.data === YT.PlayerState.PLAYING) {
+            player.setPlaybackRate(1);
+            await ensureSession();
+            lastPosition = player.getCurrentTime() || 0;
+            sendEvent('play');
+          } else if (event.data === YT.PlayerState.PAUSED) {
+            sendEvent('pause'); lastPosition = player.getCurrentTime() || 0;
+          } else if (event.data === YT.PlayerState.ENDED) {
+            sendEvent('ended');
+          } else if (event.data === YT.PlayerState.BUFFERING) {
+            lastPosition = player.getCurrentTime() || 0;
+          }
+        },
+        onPlaybackRateChange: () => { if (player.getPlaybackRate() !== 1) player.setPlaybackRate(1); },
+        onError: (event) => {
+          errorBox.classList.remove('hidden');
+          errorBox.textContent = `YouTube 재생 오류(${event.data}). 영상이 일부공개인지, 외부 삽입이 허용됐는지 확인하세요.`;
+          sendEvent('player_error');
+        }
+      }
+    });
+  };
+
+  document.addEventListener('visibilitychange', () => {
+    sendEvent(document.visibilityState === 'visible' ? 'tab_visible' : 'tab_hidden');
+    if (player?.getCurrentTime) lastPosition = player.getCurrentTime() || 0;
+  });
+
+  setInterval(async () => {
+    if (!player || !sessionId || playerState !== 1 || document.visibilityState !== 'visible') {
+      if (player?.getCurrentTime) lastPosition = player.getCurrentTime() || 0;
+      return;
+    }
+    const current = player.getCurrentTime() || 0;
+    const duration = player.getDuration() || 0;
+    const rate = player.getPlaybackRate() || 1;
+    const delta = current - lastPosition;
+    if (delta <= 0.15 || delta > 7.5) { lastPosition = current; sendEvent('seek'); return; }
+    try {
+      const result = await postJson('/api/watch/heartbeat', {
+        sessionId, videoId, from: lastPosition, to: current, duration,
+        playbackRate: rate, visible: true, playing: playerState === 1
+      });
+      if (result.accepted) {
+        saveState.textContent = `저장됨 · ${Math.floor(result.watchedSeconds / 60)}:${String(result.watchedSeconds % 60).padStart(2, '0')}`;
+        saveState.classList.remove('save-state--error');
+      }
+    } catch (error) {
+      saveState.textContent = '저장 연결 확인 필요';
+      saveState.classList.add('save-state--error');
+    }
+    lastPosition = current;
+  }, 4000);
+
+  const apiTag = document.createElement('script');
+  apiTag.src = 'https://www.youtube.com/iframe_api';
+  document.head.appendChild(apiTag);
+  window.addEventListener('pagehide', () => sendEvent('leave', true));
+})();
+</script>
+<%- include('partials/footer') %>

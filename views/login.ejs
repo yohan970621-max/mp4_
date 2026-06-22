@@ -1,0 +1,16 @@
+<%- include('partials/header', { pageTitle: '로그인' }) %>
+<section class="auth-shell">
+  <div class="auth-card auth-card--center">
+    <div class="logo-orbit"></div>
+    <div class="eyebrow">PRIVATE VIEWING</div>
+    <h1>개인 PIN으로 로그인</h1>
+    <p class="muted">다른 사람에게 자신의 PIN을 알려주지 마세요.</p>
+    <% if (setupDone) { %><div class="alert alert--success">초기 설정이 완료되었습니다. 관리자 PIN으로 로그인하세요.</div><% } %>
+    <% if (typeof error !== 'undefined' && error) { %><div class="alert alert--error"><%= error %></div><% } %>
+    <form method="post" action="/login" class="login-form">
+      <input class="pin-input" type="password" name="pin" inputmode="numeric" pattern="[0-9]{4,12}" autocomplete="current-password" placeholder="PIN" autofocus required>
+      <button class="button button--primary button--large" type="submit">로그인</button>
+    </form>
+  </div>
+</section>
+<%- include('partials/footer') %>

@@ -1,0 +1,30 @@
+<%- include('partials/header', { pageTitle: '내 작품 제출' }) %>
+<section class="hero-row">
+  <div><div class="eyebrow">MY SUBMISSION</div><h1>내 YouTube 작품 제출</h1><p class="muted">YouTube에서 일부공개로 업로드한 뒤 링크를 입력하세요.</p></div>
+  <div class="status-badge <%= submissionOpen ? 'status-badge--open' : 'status-badge--closed' %>"><%= submissionOpen ? '제출 가능' : '제출 마감' %></div>
+</section>
+<div class="two-column">
+  <section class="panel">
+    <h2>작품 링크</h2>
+    <form method="post" action="/submit" class="stack">
+      <label class="field"><span>작품 제목</span><input name="title" maxlength="120" value="<%= current ? current.title : '' %>" <%= submissionOpen ? '' : 'disabled' %> required></label>
+      <label class="field"><span>YouTube 일부공개 링크</span><input name="youtubeUrl" type="url" placeholder="https://youtu.be/..." value="<%= current ? current.youtube_url : '' %>" <%= submissionOpen ? '' : 'disabled' %> required></label>
+      <button class="button button--primary" type="submit" <%= submissionOpen ? '' : 'disabled' %>><%= current ? '링크 수정' : '작품 제출' %></button>
+    </form>
+    <div class="note"><strong>주의</strong><span>비공개가 아니라 <b>일부공개</b>로 설정해야 합니다. YouTube에서 외부 사이트 삽입이 허용되어야 합니다.</span></div>
+  </section>
+  <section class="panel">
+    <h2>현재 제출 상태</h2>
+    <% if (!current) { %>
+      <div class="empty-state"><p>아직 제출한 작품이 없습니다.</p></div>
+    <% } else { %>
+      <div class="submission-preview">
+        <img src="<%= current.thumbnail_url %>" alt="">
+        <h3><%= current.title %></h3>
+        <p class="muted">영상 ID: <%= current.youtube_id %></p>
+        <div class="embed-preview"><iframe src="https://www.youtube-nocookie.com/embed/<%= current.youtube_id %>" title="제출 영상 미리보기" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>
+      </div>
+    <% } %>
+  </section>
+</div>
+<%- include('partials/footer') %>

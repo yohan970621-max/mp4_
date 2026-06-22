@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: video-evaluation-web
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    preDeployCommand: npm run db:migrate
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 24.17.0
+      - key: NODE_ENV
+        value: production
+      - key: TRUST_PROXY
+        value: "1"
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: video-evaluation-db
+          property: connectionString
+
+databases:
+  - name: video-evaluation-db
+    plan: free
+    databaseName: video_evaluation
+    user: video_evaluation_user

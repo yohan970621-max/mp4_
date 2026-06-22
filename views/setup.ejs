@@ -1,0 +1,19 @@
+<%- include('partials/header', { pageTitle: '최초 설정' }) %>
+<section class="auth-shell auth-shell--wide">
+  <div class="auth-card">
+    <div class="eyebrow">FIRST SETUP</div>
+    <h1>처음 한 번만 설정하세요</h1>
+    <p class="muted">관리자·강사·학생 계정을 만들고 바로 작품 제출을 시작합니다.</p>
+    <% if (typeof error !== 'undefined' && error) { %><div class="alert alert--error"><%= error %></div><% } %>
+    <form method="post" action="/setup" class="form-grid">
+      <label class="field field--full"><span>평가 행사명</span><input name="eventTitle" value="영상 편집 개인작업 시청 평가" maxlength="100" required></label>
+      <label class="field"><span>관리자 이름</span><input name="adminName" value="관리자" maxlength="50" required></label>
+      <label class="field"><span>관리자 PIN</span><input name="adminPin" inputmode="numeric" pattern="[0-9]{4,12}" placeholder="숫자 4~12자리" required></label>
+      <label class="field"><span>강사 이름</span><input name="teacherName" value="강사" maxlength="50" required></label>
+      <label class="field"><span>강사 PIN</span><input name="teacherPin" inputmode="numeric" pattern="[0-9]{4,12}" placeholder="숫자 4~12자리" required></label>
+      <label class="field field--full"><span>학생 명단 · 한 줄에 이름,PIN</span><textarea name="students" rows="15" required><%= template %></textarea><small>예: 김민수,1001 · PIN은 모두 달라야 합니다.</small></label>
+      <div class="field--full"><button class="button button--primary button--large" type="submit">계정 생성하고 시작</button></div>
+    </form>
+  </div>
+</section>
+<%- include('partials/footer') %>

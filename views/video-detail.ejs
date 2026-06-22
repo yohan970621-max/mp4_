@@ -1,0 +1,6 @@
+<%- include('partials/header', { pageTitle: video.title + ' 상세' }) %>
+<section class="detail-heading"><a class="back-link" href="/admin#ranking">← 관리자</a><div><div class="eyebrow">VIDEO REPORT</div><h1><%= video.title %></h1><p class="muted">제작자 <%= video.owner_name %> · 영상 길이 <%= video.duration_seconds ? formatSeconds(video.duration_seconds) : '미확인' %></p></div></section>
+<div class="table-wrap panel"><table><thead><tr><th>순서</th><th>시청자</th><th>역할</th><th>고유 시청시간</th><th>시청률</th><th>클릭 횟수</th></tr></thead><tbody>
+<% rows.forEach((row, index) => { const rate = video.duration_seconds > 0 ? Math.min(100, row.watched_seconds / video.duration_seconds * 100) : 0; %><tr><td><%= index + 1 %></td><td><a class="table-title" href="/admin/viewer/<%= row.id %>"><%= row.name %></a></td><td><%= row.role === 'teacher' ? '강사' : '학생' %></td><td><strong><%= formatSeconds(row.watched_seconds) %></strong></td><td><%= rate.toFixed(1) %>%</td><td><%= row.click_count %>회</td></tr><% }) %>
+</tbody></table></div>
+<%- include('partials/footer') %>

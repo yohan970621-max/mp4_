@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title><%= pageTitle ? pageTitle + ' · ' : '' %><%= eventTitle %></title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar__inner">
+    <a class="brand" href="/"><span class="brand__mark"></span><%= eventTitle %></a>
+    <% if (user) { %>
+      <nav class="topbar__actions">
+        <span class="user-chip"><%= user.name %></span>
+        <% if (user.role === 'student') { %><a class="button button--ghost button--small" href="/submit">내 작품</a><% } %>
+        <% if (user.role !== 'admin') { %><a class="button button--ghost button--small" href="/videos">작품 목록</a><% } %>
+        <% if (user.role === 'admin') { %><a class="button button--ghost button--small" href="/admin">관리자</a><% } %>
+        <form action="/logout" method="post"><button class="button button--ghost button--small" type="submit">로그아웃</button></form>
+      </nav>
+    <% } %>
+  </div>
+</header>
+<main class="container">
+  <% if (flash) { %><div class="alert alert--<%= flash.type %>"><%= flash.message %></div><% } %>
