@@ -4,7 +4,6 @@ services:
     runtime: node
     plan: free
     buildCommand: npm ci
-    preDeployCommand: npm run db:migrate
     startCommand: npm start
     healthCheckPath: /health
     envVars:
