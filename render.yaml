@@ -3,7 +3,7 @@ services:
     name: video-evaluation-web
     runtime: node
     plan: free
-    buildCommand: npm ci
+    buildCommand: rm -f package-lock.json && npm install --omit=dev --registry=https://registry.npmjs.org
     startCommand: npm start
     healthCheckPath: /health
     envVars:
